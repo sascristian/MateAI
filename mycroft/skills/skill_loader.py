@@ -15,6 +15,7 @@
 """Periodically run by skill manager to load skills into memory."""
 import gc
 import importlib
+from inspect import isclass
 import os
 import sys
 from os import path, makedirs
@@ -22,13 +23,14 @@ from time import time
 
 import xdg.BaseDirectory
 
-from mycroft.configuration import BASE_FOLDER
+from ovos_utils.configuration import get_xdg_base, is_using_xdg
 from mycroft.configuration import Configuration
-from mycroft.configuration.ovos import is_using_xdg
 from mycroft.messagebus import Message
-from mycroft.skills.settings import SettingsMetaUploader
 from mycroft.skills.settings import save_settings
 from mycroft.util.log import LOG
+
+from mycroft.skills.settings import SettingsMetaUploader
+from mycroft.skills.mycroft_skill.mycroft_skill import MycroftSkill
 
 SKILL_MAIN_MODULE = '__init__.py'
 
@@ -92,7 +94,7 @@ def get_skill_directories(conf=None):
     # they should be considered applets rather than full applications
     skill_locations = list(reversed(
         [os.path.join(p, folder)
-         for p in xdg.BaseDirectory.load_data_paths(BASE_FOLDER)]
+         for p in xdg.BaseDirectory.load_data_paths(get_xdg_base())]
     ))
 
     # load the default skills folder
@@ -144,15 +146,15 @@ def get_default_skills_directory(conf=None):
     # if xdg is disabled, ignore it!
     elif not is_using_xdg():
         # old style mycroft-core skills path definition
-        data_dir = conf.get("data_dir") or "/opt/" + BASE_FOLDER
+        data_dir = conf.get("data_dir") or "/opt/" + get_xdg_base()
         skills_folder = path.join(data_dir, folder)
     else:
-        skills_folder = xdg.BaseDirectory.save_data_path(BASE_FOLDER + '/' + folder)
+        skills_folder = xdg.BaseDirectory.save_data_path(get_xdg_base() + '/' + folder)
     # create folder if needed
     try:
         makedirs(skills_folder, exist_ok=True)
     except PermissionError:  # old style /opt/mycroft/skills not available
-        skills_folder = xdg.BaseDirectory.save_data_path(BASE_FOLDER + '/' + folder)
+        skills_folder = xdg.BaseDirectory.save_data_path(get_xdg_base() + '/' + folder)
         makedirs(skills_folder, exist_ok=True)
 
     return path.expanduser(skills_folder)
@@ -249,6 +251,23 @@ def _get_last_modified_time(path):
         return max(os.path.getmtime(f) for f in all_files)
     else:
         return 0
+
+
+def get_skill_class(skill_module):
+    """Find MycroftSkill based class in skill module.
+
+    Arguments:
+        skill_module (module): module to search for Skill class
+
+    Returns:
+        (MycroftSkill): Found subclass of MycroftSkill or None.
+    """
+    for name, obj in skill_module.__dict__.items():
+        if all((isclass(obj),
+                issubclass(obj, MycroftSkill),
+                obj is not MycroftSkill)):
+            return obj
+    return None
 
 
 class SkillLoader:
@@ -397,6 +416,7 @@ class SkillLoader:
     def _load_skill_source(self):
         """Use Python's import library to load a skill's source code."""
         main_file_path = os.path.join(self.skill_directory, SKILL_MAIN_MODULE)
+        skill_module = None
         if not os.path.exists(main_file_path):
             error_msg = 'Failed to load {} due to a missing file.'
             LOG.error(error_msg.format(self.skill_id))
@@ -406,45 +426,25 @@ class SkillLoader:
             except Exception as e:
                 LOG.exception('Failed to load skill: '
                               '{} ({})'.format(self.skill_id, repr(e)))
-            else:
-                module_is_skill = (
-                        hasattr(skill_module, 'create_skill') and
-                        callable(skill_module.create_skill)
-                )
-                if module_is_skill:
-                    return skill_module
-        return None  # Module wasn't loaded
+        return skill_module
 
     def _create_skill_instance(self, skill_module):
-        """Use v2 skills framework to create the skill."""
-        try:
-            self.instance = skill_module.create_skill()
-        except Exception as e:
-            log_msg = 'Skill __init__ failed with {}'
-            LOG.exception(log_msg.format(repr(e)))
-            self.instance = None
+        """create the skill object.
 
-        if self.instance:
-            self.instance.skill_id = self.skill_id
-            self.instance.bind(self.bus)
-            try:
-                self.instance.load_data_files()
-                # Set up intent handlers
-                # TODO: can this be a public method?
-                self.instance._register_decorated()
-                self.instance.register_resting_screen()
-                self.instance.initialize()
-            except Exception as e:
-                LOG.exception(f'Skill initialization failed: {e}')
-                # If an exception occurs, attempt to clean up the skill
-                try:
-                    self.instance.default_shutdown()
-                except Exception as e2:
-                    # if initialize failed then it's likely
-                    # default_shutdown will fail
-                    LOG.debug(f'Skill cleanup failed: {e2}')
-                    LOG.debug(f'this is usually fine and often expected')
-                self.instance = None
+        Arguments:
+            skill_module (module): Module to load from
+
+        Returns:
+            (bool): True if skill was loaded successfully.
+        """
+        try:
+            skill_class = get_skill_class(skill_module)
+            self.instance = skill_class()
+            # instance was not fully initialized yet
+            self.instance._start_up(self.bus, self.skill_id)
+        except Exception as e:
+            LOG.exception(f'Skill __init__ failed with {e}')
+            self.instance = None
 
         return self.instance is not None
 
