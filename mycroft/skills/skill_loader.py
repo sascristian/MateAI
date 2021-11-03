@@ -30,6 +30,8 @@ from mycroft.util.log import LOG
 
 from mycroft.skills.settings import SettingsMetaUploader
 from mycroft.skills.mycroft_skill.mycroft_skill import MycroftSkill
+from ovos_plugin_manager.skills import find_skill_plugins
+
 
 SKILL_MAIN_MODULE = '__init__.py'
 
@@ -261,11 +263,15 @@ def get_skill_class(skill_module):
     Returns:
         (MycroftSkill): Found subclass of MycroftSkill or None.
     """
-    for name, obj in skill_module.__dict__.items():
-        if all((isclass(obj),
-                issubclass(obj, MycroftSkill),
-                obj is not MycroftSkill)):
-            return obj
+    if callable(skill_module):
+        # it's a skill plugin
+        # either a func that returns the skill or the skill class itself
+        return skill_module
+    else:
+        for name, obj in skill_module.__dict__.items():
+            if isclass(obj):
+                if issubclass(obj, MycroftSkill) and obj is not MycroftSkill:
+                    return obj
     return None
 
 
@@ -440,7 +446,7 @@ class SkillLoader:
             skill_class = get_skill_class(skill_module)
             self.instance = skill_class()
             # instance was not fully initialized yet
-            self.instance._start_up(self.bus, self.skill_id)
+            self.instance._startup(self.bus, self.skill_id)
         except Exception as e:
             LOG.exception(f'Skill __init__ failed with {e}')
             self.instance = None
@@ -481,3 +487,36 @@ class SkillLoader:
             )
             self.bus.emit(message)
             LOG.error('Skill {} failed to load'.format(self.skill_id))
+
+
+class PluginSkillLoader(SkillLoader):
+    def __init__(self, bus, skill_id):
+        super().__init__(bus, skill_id)
+        self.skill_directory = skill_id
+        self.skill_id = skill_id
+
+    def reload_needed(self):
+        return False
+
+    def _create_skill_instance(self, skill_module):
+        if super()._create_skill_instance(skill_module):
+            self.skill_directory = self.instance.root_dir
+            return True
+        return False
+
+    def load(self, skill_module):
+        LOG.info('ATTEMPTING TO LOAD PLUGIN SKILL: ' + self.skill_id)
+        self._prepare_for_load()
+        if self.is_blacklisted:
+            self._skip_load()
+        else:
+            if self._create_skill_instance(skill_module):
+                self._check_for_first_run()
+                self.loaded = True
+
+        self.last_loaded = time()
+        self._communicate_load_status()
+        if self.loaded:
+            self._prepare_settings_meta()
+        return self.loaded
+
