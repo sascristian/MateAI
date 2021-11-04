@@ -135,8 +135,6 @@ class MycroftSkill:
         self._bus = None
         self._enclosure = None
         self.bind(bus)
-        #: Mycroft global configuration. (dict)
-        self.config_core = Configuration.get()
 
         self.settings = None
         self.settings_write_path = None
@@ -167,6 +165,13 @@ class MycroftSkill:
 
         # Skill Public API
         self.public_api = {}
+
+    @property
+    def config_core(self):
+        """ reads mycroft.conf
+        contains and internal cache and integrates with the bus
+        """
+        return Configuration.get()
 
     @property
     def dialog_renderer(self):
@@ -267,7 +272,7 @@ class MycroftSkill:
         NOTE: this should be public, but since if a skill uses this it wont
         work in regular mycroft-core it was made private! Equivalent PRs in
         mycroft-core have been rejected/abandoned"""
-        return Configuration.get().get("lang", "en-us").lower()
+        return self.config_core.get("lang", "en-us").lower()
 
     @property
     def _secondary_langs(self):
