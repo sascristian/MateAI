@@ -14,23 +14,23 @@
 #
 """Common functionality relating to the implementation of mycroft skills."""
 
-from copy import deepcopy
-import sys
 import re
+import shutil
+import sys
 import traceback
 from itertools import chain
 from os import walk, listdir
 from os.path import join, abspath, dirname, basename, exists, isdir
-from pathlib import Path
-from threading import Event, Timer
+from threading import Event
 
 import xdg.BaseDirectory
-
 from adapt.intent import Intent, IntentBuilder
+from json_database import JsonStorage
 
 from mycroft import dialog
 from mycroft.api import DeviceApi
 from mycroft.audio import wait_while_speaking
+from mycroft.configuration.ovos import is_using_xdg
 from ovos_utils.enclosure.api import EnclosureAPI
 from mycroft.gui import SkillGUI
 from ovos_utils.configuration import is_using_xdg, get_xdg_base
@@ -39,20 +39,10 @@ from mycroft.dialog import load_dialogs
 from mycroft.filesystem import FileSystemAccess
 from mycroft.messagebus.message import Message, dig_for_message
 from mycroft.metrics import report_metric
-from mycroft.util import (
-    resolve_resource_file,
-    play_audio_file,
-    camel_case_split
-)
-from mycroft.util.log import LOG
-from mycroft.util.format import pronounce_number, join_list
-from mycroft.util.parse import match_one, extract_number
-
-from mycroft.skills.mycroft_skill.event_container import EventContainer, \
-    create_wrapper, get_handler_name
 from mycroft.skills.event_scheduler import EventSchedulerInterface
 from mycroft.skills.intent_service_interface import IntentServiceInterface
-from mycroft.skills.settings import get_local_settings, save_settings
+from mycroft.skills.mycroft_skill.event_container import EventContainer, \
+    create_wrapper, get_handler_name
 from mycroft.skills.skill_data import (
     load_vocabulary,
     load_regex,
@@ -252,35 +242,44 @@ class MycroftSkill:
         # Fall back to main language
         return self.dialog_renderers.get(self._core_lang)
 
+    @property
+    def settings_path(self):
+        is_xdg = is_using_xdg()
+        if self.settings_write_path:
+            if is_xdg:
+                LOG.warning("self.settings_write_path has been deprecated!\n"
+                            "Support for overriding settings.json path will be removed in version 0.0.3")
+            return join(self.settings_write_path, 'settings.json')
+        if not is_xdg:
+            return self._old_settings_path
+        return join(xdg.BaseDirectory.save_config_path(get_xdg_base(), 'skills', self.skill_id), 'settings.json')
+
+    @property
+    def _old_settings_path(self):
+        old_dir = self.config_core.get("data_dir", "/opt/mycroft")
+        old_folder = self.config_core.get("skills", {}).get("msm", {}).get("directory", "skills")
+        return join(old_dir, old_folder, self.skill_id, 'settings.json')
+
     def _init_settings(self):
         """Setup skill settings."""
+        LOG.debug(f"initializing skill settings for {self.skill_id}")
 
-        # TODO remove this ugly ugly kludge
-        # To not break existing setups,
-        # save to skill directory if the file exists already
-        self.settings_write_path = Path(self.root_dir)
+        # migrate settings if needed
+        if not exists(self.settings_path) and exists(self._old_settings_path):
+            shutil.copy(self._old_settings_path, self.settings_path)
 
-        # Otherwise save to XDG_CONFIG_DIR
-        if not self.settings_write_path.joinpath('settings.json').exists():
-            self.settings_write_path = Path(xdg.BaseDirectory.save_config_path(
-                get_xdg_base(), 'skills', basename(self.root_dir)))
+        # if settings were used in __init__ method self._startup won't have been called yet
+        # assume these are default values
+        if self.settings:
+            self._initial_settings = dict(self.settings)
 
-        # To not break existing setups,
-        # read from skill directory if the settings file exists there
-        settings_read_path = Path(self.root_dir)
+        # create persistent settings dict
+        self.settings = JsonStorage(self.settings_path)
 
-        # Then, check XDG_CONFIG_DIR
-        if not settings_read_path.joinpath('settings.json').exists():
-            for path in xdg.BaseDirectory.load_config_paths(get_xdg_base(), 'skills',
-                                                            basename(self.root_dir)):
-                path = Path(path)
-                # If there is a settings file here, use it
-                if path.joinpath('settings.json').exists():
-                    settings_read_path = path
-                    break
-
-        self.settings = get_local_settings(settings_read_path, self.skill_id)
-        self._initial_settings = deepcopy(self.settings)
+        # copy default values
+        for k, v in self._initial_settings.items():
+            if k not in self.settings:
+                self.settings[k] = v
 
     @property
     def enclosure(self):
@@ -508,7 +507,7 @@ class MycroftSkill:
             if remote_settings is not None:
                 LOG.info('Updating settings for skill ' + self.skill_id)
                 self.settings.update(**remote_settings)
-                save_settings(self.settings_write_path, self.settings)
+                self.settings.store()
                 if self.settings_change_callback is not None:
                     self.settings_change_callback()
 
@@ -1151,8 +1150,8 @@ class MycroftSkill:
             """Store settings and indicate that the skill handler has completed
             """
             if self.settings != self._initial_settings:
-                save_settings(self.settings_write_path, self.settings)
-                self._initial_settings = deepcopy(self.settings)
+                self.settings.store()
+                self._initial_settings = dict(self.settings)
             if handler_info:
                 msg_type = handler_info + '.complete'
                 message.context["skill_id"] = self.skill_id
@@ -1610,10 +1609,8 @@ class MycroftSkill:
         self.settings_change_callback = None
 
         # Store settings
-        if self.settings != self._initial_settings and Path(
-                self.root_dir).exists():
-            save_settings(self.settings_write_path, self.settings)
-
+        if self.settings != self._initial_settings:
+            self.settings.store()
         if self.settings_meta:
             self.settings_meta.stop()
 

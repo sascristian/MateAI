@@ -26,7 +26,6 @@ import xdg.BaseDirectory
 from ovos_utils.configuration import get_xdg_base, is_using_xdg
 from mycroft.configuration import Configuration
 from mycroft.messagebus import Message
-from mycroft.skills.settings import save_settings
 from mycroft.util.log import LOG
 
 from mycroft.skills.settings import SettingsMetaUploader
@@ -457,8 +456,7 @@ class SkillLoader:
         if first_run:
             LOG.info("First run of " + self.skill_id)
             self.instance.settings["__mycroft_skill_firstrun"] = False
-            save_settings(self.instance.settings_write_path,
-                          self.instance.settings)
+            self.instance.settings.store()
             intro = self.instance.get_intro_message()
             if intro:
                 self.instance.speak(intro)

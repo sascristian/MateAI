@@ -73,44 +73,10 @@ from mycroft.util import camel_case_split
 from mycroft.util.log import LOG
 from mycroft.util.file_utils import ensure_directory_exists
 
+# these 2 methods are maintained as part of ovos_utils but need to be available from this location for compatibility
+from ovos_utils.skills.settings import get_local_settings, save_settings
+
 ONE_MINUTE = 60
-
-
-def get_local_settings(skill_dir, skill_name) -> dict:
-    """Build a dictionary using the JSON string stored in settings.json."""
-    skill_settings = {}
-    settings_path = Path(skill_dir).joinpath('settings.json')
-    LOG.info(settings_path)
-    if settings_path.exists():
-        with open(str(settings_path)) as settings_file:
-            settings_file_content = settings_file.read()
-        if settings_file_content:
-            try:
-                skill_settings = json.loads(settings_file_content)
-            # TODO change to check for JSONDecodeError in 19.08
-            except Exception:
-                LOG.error(f'Failed to load {skill_name} settings from settings.json')
-
-    return skill_settings
-
-
-def save_settings(skill_dir, skill_settings):
-    """Save skill settings to file."""
-    settings_path = Path(skill_dir).joinpath('settings.json')
-
-    # Either the file already exists or we are writing
-    # to XDG_CONFIG_DIR and always have the permission to make
-    # sure the file always exists
-    if not Path(settings_path).exists():
-        settings_path.touch(mode=0o644)
-
-    with open(str(settings_path), 'w') as settings_file:
-        try:
-            json.dump(skill_settings, settings_file)
-        except Exception:
-            LOG.error(f'error saving skill settings to {settings_path}')
-        else:
-            LOG.info(f'Skill settings successfully saved to {settings_path}')
 
 
 def get_display_name(skill_name: str):
