@@ -63,6 +63,16 @@ from mycroft.skills.skill_data import (
     read_value_file,
     read_translated_file
 )
+from mycroft.util import (
+    resolve_resource_file,
+    play_audio_file,
+    camel_case_split
+)
+from mycroft.util.format import pronounce_number, join_list
+from mycroft.util.log import LOG
+from mycroft.util.parse import match_one, extract_number
+from ovos_utils.file_utils import get_temp_path
+import shutil
 
 
 def simple_trace(stack_trace):
@@ -133,9 +143,13 @@ class MycroftSkill:
         self.gui = SkillGUI(self)
 
         self._bus = None
-        self._enclosure = None
+        self._enclosure = EnclosureAPI(bus)
 
-        self.settings = None
+        self.settings = {}
+        self._initial_settings = {}
+
+        # allows downstream to override the final settings path
+        # this is only for backwards compat!
         self.settings_write_path = None
 
         # old kludge from fallback skills, unused according to grep
@@ -151,20 +165,34 @@ class MycroftSkill:
 
         #: Filesystem access to skill specific folder.
         #: See mycroft.filesystem for details.
-        self.file_system = FileSystemAccess(join('skills', self.name))
+        # fully initialized when self.skill_id is set
+        self.file_system = FileSystemAccess(get_temp_path(self.name))
 
-        self.log = LOG.create_logger(self.name)  #: Skill logger instance
+        self.log = LOG
         self.reload_skill = True  #: allow reloading (default True)
 
         self.events = EventContainer(bus)
         self.voc_match_cache = {}
 
         # Delegator classes
-        self.event_scheduler = EventSchedulerInterface(self.name)
+        self.event_scheduler = EventSchedulerInterface()
         self.intent_service = IntentServiceInterface()
 
         # Skill Public API
         self.public_api = {}
+
+    def _init_filesystem(self):
+        skill_file_system = FileSystemAccess(join('skills', self.skill_id))
+        if not isdir(skill_file_system.path):
+            shutil.move(self.file_system.path, skill_file_system.path)
+        else:
+            for f in listdir(self.file_system.path):
+                src = join(self.file_system.path, f)
+                dst = join(skill_file_system.path, f)
+                if not exists(dst):
+                    shutil.move(src, dst)
+
+        self.file_system = skill_file_system
 
     def _startup(self, bus, skill_id=""):
         """Startup the skill.
@@ -180,13 +208,22 @@ class MycroftSkill:
         # NOTE: this method is called by SkillLoader
         # it is private to make it clear to skill devs they should not touch it
         try:
+            # set the skill_id
             self.skill_id = skill_id or basename(self.root_dir)
             self._init_settings()
+            self._init_filesystem()
+            self.log = LOG.create_logger(self.skill_id)  #: Skill logger instance
+            self.intent_service.set_id(self.skill_id)
+            self.event_scheduler.set_id(self.skill_id)
+            self.enclosure.set_id(self.skill_id)
+
+            # initialize anything that depends on the messagebus
             self.bind(bus)
             self.load_data_files()
-            # Set up intent handlers
             self._register_decorated()
             self.register_resting_screen()
+
+            # run skill developer initialization code
             self.initialize()
         except Exception as e:
             LOG.exception('Skill initialization failed')
@@ -242,7 +279,7 @@ class MycroftSkill:
                     settings_read_path = path
                     break
 
-        self.settings = get_local_settings(settings_read_path, self.name)
+        self.settings = get_local_settings(settings_read_path, self.skill_id)
         self._initial_settings = deepcopy(self.settings)
 
     @property
@@ -361,14 +398,11 @@ class MycroftSkill:
             self._bus = bus
             self.events.set_bus(bus)
             self.intent_service.set_bus(bus)
-            self.intent_service.set_id(self.skill_id)
             self.event_scheduler.set_bus(bus)
-            self.event_scheduler.set_id(self.skill_id)
-            self._enclosure = EnclosureAPI(bus, self.name)
+            self._enclosure.set_bus(bus)
             self._register_system_event_handlers()
             # Initialize the SkillGui
             self.gui.setup_default_handlers()
-
             self._register_public_api()
 
     def _register_public_api(self):
@@ -401,14 +435,13 @@ class MycroftSkill:
                 name = method.__name__
                 self.public_api[name] = {
                     'help': doc,
-                    'type': '{}.{}'.format(self.skill_id, name),
+                    'type': f'{self.skill_id}.{name}',
                     'func': method
                 }
         for key in self.public_api:
             if ('type' in self.public_api[key] and
                     'func' in self.public_api[key]):
-                LOG.debug('Adding api method: '
-                          '{}'.format(self.public_api[key]['type']))
+                LOG.debug(f"Adding api method: {self.public_api[key]['type']}")
 
                 # remove the function member since it shouldn't be
                 # reused and can't be sent over the messagebus
@@ -417,7 +450,7 @@ class MycroftSkill:
                                wrap_method(func))
 
         if self.public_api:
-            self.add_event('{}.public_api'.format(self.skill_id),
+            self.add_event(f'{self.skill_id}.public_api',
                            self._send_public_api)
 
     def _register_system_event_handlers(self):
@@ -473,7 +506,7 @@ class MycroftSkill:
         if self.settings_meta:
             remote_settings = message.data.get(self.settings_meta.skill_gid)
             if remote_settings is not None:
-                LOG.info('Updating settings for skill ' + self.name)
+                LOG.info('Updating settings for skill ' + self.skill_id)
                 self.settings.update(**remote_settings)
                 save_settings(self.settings_write_path, self.settings)
                 if self.settings_change_callback is not None:
@@ -481,7 +514,7 @@ class MycroftSkill:
 
     def detach(self):
         for (name, _) in self.intent_service:
-            name = '{}:{}'.format(self.skill_id, name)
+            name = f'{self.skill_id}:{name}'
             self.intent_service.detach_intent(name)
 
     def initialize(self):
@@ -767,11 +800,8 @@ class MycroftSkill:
 
         if numeric:
             for idx, opt in enumerate(options):
-                opt_str = "{number}, {option_text}".format(
-                    number=pronounce_number(
-                        idx + 1, self.lang), option_text=opt)
-
-                self.speak(opt_str, wait=True)
+                number = pronounce_number(idx + 1, self.lang)
+                self.speak(f"{number}, {opt}", wait=True)
         else:
             opt_str = join_list(options, "or", lang=self.lang) + "?"
             self.speak(opt_str, wait=True)
@@ -824,8 +854,7 @@ class MycroftSkill:
                                                  voc_filename + '.voc'))
 
             if not voc or not exists(voc):
-                raise FileNotFoundError(
-                    'Could not find {}.voc file'.format(voc_filename))
+                raise FileNotFoundError(f'Could not find {voc_filename}.voc file')
             # load vocab and flatten into a simple list
             vocab = read_vocab_file(voc)
             self.voc_match_cache[cache_key] = list(chain(*vocab))
@@ -848,7 +877,7 @@ class MycroftSkill:
             name (str): Name of metric. Must use only letters and hyphens
             data (dict): JSON dictionary to report. Must be valid JSON
         """
-        report_metric('{}:{}'.format(basename(self.root_dir), name), data)
+        report_metric(f'{self.skill_id}:{name}', data)
 
     def send_email(self, title, body):
         """Send an email to the registered user's email.
@@ -895,12 +924,10 @@ class MycroftSkill:
             method = getattr(self, attr_name)
             if hasattr(method, 'resting_handler'):
                 self.resting_name = method.resting_handler
-                self.log.info('Registering resting screen {} for {}.'.format(
-                    method, self.resting_name))
+                self.log.info(f'Registering resting screen {method} for {self.resting_name}.')
 
                 # Register for handling resting screen
-                msg_type = '{}.{}'.format(self.skill_id, 'idle')
-                self.add_event(msg_type, method)
+                self.add_event(f'{self.skill_id}.idle', method)
                 # Register handler for resting screen collect message
                 self.add_event('mycroft.mark2.collect_idle',
                                self._handle_collect_resting)
@@ -1210,7 +1237,7 @@ class MycroftSkill:
             name = f'{self.skill_id}:{intent_file}'
             filename = self.find_resource(intent_file, 'vocab', lang=lang)
             if not filename:
-                self.log.error('Unable to find "{}"'.format(intent_file))
+                self.log.error(f'Unable to find "{intent_file}"')
                 continue
             self.intent_service.register_padatious_intent(name, filename, lang)
             if handler:
@@ -1242,7 +1269,7 @@ class MycroftSkill:
             if not filename:
                 self.log.error(f'Unable to find "{entity_file}"')
                 continue
-            name = '{}:{}'.format(self.skill_id, entity_file)
+            name = f'{self.skill_id}:{entity_file}'
             self.intent_service.register_padatious_entity(name, filename, lang)
 
     def handle_enable_intent(self, message):
@@ -1281,8 +1308,7 @@ class MycroftSkill:
                 self.intent_service.detach_intent(lang_intent_name)
             return True
         else:
-            LOG.error('Could not disable '
-                      '{}, it hasn\'t been registered.'.format(intent_name))
+            LOG.error(f'Could not disable {intent_name}, it hasn\'t been registered.')
             return False
 
     def enable_intent(self, intent_name):
@@ -1301,11 +1327,10 @@ class MycroftSkill:
             else:
                 intent.name = intent_name
                 self.register_intent(intent, None)
-            LOG.debug('Enabling intent {}'.format(intent_name))
+            LOG.debug(f'Enabling intent {intent_name}')
             return True
         else:
-            LOG.error('Could not enable '
-                      '{}, it hasn\'t been registered.'.format(intent_name))
+            LOG.error(f'Could not enable {intent_name}, it hasn\'t been registered.')
             return False
 
     def set_context(self, context, word='', origin=''):
@@ -1402,8 +1427,8 @@ class MycroftSkill:
         """
         # registers the skill as being active
         meta = meta or {}
-        meta['skill'] = self.name
-        self.enclosure.register(self.name)
+        meta['skill'] = self.skill_id
+        self.enclosure.register(self.skill_id)
         data = {'utterance': utterance,
                 'expect_response': expect_response,
                 'meta': meta,
@@ -1562,7 +1587,7 @@ class MycroftSkill:
                                             {"skill_id": self.skill_id}))
         except Exception as e:
             LOG.exception(e)
-            LOG.error(f'Failed to stop skill: {self.name}')
+            LOG.error(f'Failed to stop skill: {self.skill_id}')
 
     def stop(self):
         """Optional method implemented by subclass."""
@@ -1602,14 +1627,12 @@ class MycroftSkill:
         try:
             self.stop()
         except Exception:
-            LOG.error('Failed to stop skill: {}'.format(self.name),
-                      exc_info=True)
+            LOG.error(f'Failed to stop skill: {self.skill_id}', exc_info=True)
 
         try:
             self.shutdown()
         except Exception as e:
-            LOG.error('Skill specific shutdown function encountered '
-                      'an error: {}'.format(repr(e)))
+            LOG.error(f'Skill specific shutdown function encountered an error: {e}')
 
         self.bus.emit(
             Message('detach_skill', {'skill_id': str(self.skill_id) + ':'},
