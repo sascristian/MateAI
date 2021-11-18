@@ -148,9 +148,6 @@ class SkillManager(Thread):
 
     def _define_message_bus_events(self):
         """Define message bus events with handlers defined in this class."""
-        # Conversation management
-        self.bus.on('skill.converse.request', self.handle_converse_request)
-
         # Update on initial connection
         self.bus.on(
             'mycroft.internet.connected',
@@ -546,56 +543,3 @@ class SkillManager(Thread):
         # Do a clean shutdown of all plugin skills
         for skill_id in self.plugin_skills:
             self._unload_plugin_skill(skill_id)
-
-    def _converse(self, skill_loader, message):
-        try:
-            # check the signature of a converse method
-            # to either pass a message or not
-            if len(signature(skill_loader.instance.converse).parameters) == 1:
-                result = skill_loader.instance.converse(message=message)
-            else:
-                utterances = message.data['utterances']
-                lang = message.data['lang']
-                result = skill_loader.instance.converse(utterances=utterances, lang=lang)
-            self.bus.emit(message.reply('skill.converse.response',
-                                        {"skill_id": skill_loader.skill_id,
-                                         "result": result}))
-        except Exception:
-            error_message = 'exception in converse method'
-            LOG.exception(error_message)
-            self._emit_converse_error(message, skill_loader.skill_id, error_message)
-
-    def handle_converse_request(self, message):
-        """Check if the targeted skill id can handle conversation
-
-        If supported, the conversation is invoked.
-        """
-        skill_id = message.data['skill_id']
-
-        if skill_id in self.plugin_skills:
-            skill_found = True
-            self._converse(self.plugin_skills[skill_id], message)
-        else:
-            # loop trough skills list and call converse for skill with skill_id
-            skill_found = False
-            for skill_loader in self.skill_loaders.values():
-                if skill_loader.skill_id == skill_id:
-                    skill_found = True
-                    if not skill_loader.loaded:
-                        error_message = 'converse requested but skill not loaded'
-                        self._emit_converse_error(message, skill_id, error_message)
-                        break
-                    else:
-                        self._converse(skill_loader, message)
-                    break
-
-        # TODO handle external skills, hivemind/OVOSAbstractApp can not properly use converse
-        if not skill_found:
-            error_message = 'skill id does not exist'
-            self._emit_converse_error(message, skill_id, error_message)
-
-    def _emit_converse_error(self, message, skill_id, error_msg):
-        """Emit a message reporting the error back to the intent service."""
-        reply = message.reply('skill.converse.response',
-                              {"skill_id": skill_id, "error": error_msg})
-        self.bus.emit(reply)
