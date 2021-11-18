@@ -332,30 +332,9 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
     def __init__(self, loop, watchdog=None):
         self.loop = loop
         self._watchdog = watchdog or (lambda: None)  # Default to dummy func
-        self.config = Configuration.get()
-        listener_config = self.config.get('listener')
-        self.instant_listen = listener_config.get("instant_listen", False)
-        self.upload_url = listener_config['wake_word_upload']['url']
-        self.upload_disabled = listener_config['wake_word_upload']['disable']
-
-        self.overflow_exc = listener_config.get('overflow_exception', False)
 
         super().__init__()
         self.audio = pyaudio.PyAudio()
-        self.multiplier = listener_config.get('multiplier')
-        self.energy_ratio = listener_config.get('energy_ratio')
-
-        # Check the config for the flag to save wake words, utterances
-        # and for a path under which to save them
-        self.save_utterances = listener_config.get('save_utterances', False)
-        self.save_wake_words = listener_config.get('record_wake_words', False)
-        self.save_path = listener_config.get('save_path', gettempdir())
-        self.saved_wake_words_dir = join(self.save_path, 'mycroft_wake_words')
-        if self.save_wake_words:
-            os.makedirs(self.saved_wake_words_dir, exist_ok=True)
-        self.saved_utterances_dir = join(self.save_path, 'mycroft_utterances')
-        if self.save_utterances:
-            os.makedirs(self.saved_utterances_dir, exist_ok=True)
 
         # Signal statuses
         self._stop_signaled = False
@@ -366,22 +345,103 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
         # identifier used when uploading wakewords to selene
         self._account_id = None
 
+    @property
+    def config(self):
+        return Configuration.get()
+
+    @property
+    def instant_listen(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get("instant_listen", False)
+
+    @property
+    def overflow_exc(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('overflow_exception', False)
+
+    @property
+    def upload_url(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config['wake_word_upload']['url']
+
+    @property
+    def upload_disabled(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config['wake_word_upload']['disable']
+
+    @property
+    def multiplier(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('multiplier')
+
+    @property
+    def energy_ratio(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('energy_ratio')
+
+    @property
+    def save_utterances(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('save_utterances', False)
+
+    @property
+    def save_wake_words(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('record_wake_words', False)
+
+    @property
+    def save_path(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('save_path', gettempdir())
+
+    @property
+    def saved_wake_words_dir(self):
+        path = join(self.save_path, 'mycroft_wake_words')
+        if self.save_wake_words:
+            os.makedirs(path, exist_ok=True)
+        return path
+
+    @property
+    def saved_utterances_dir(self):
+        path = join(self.save_path, 'mycroft_utterances')
+        if self.save_wake_words:
+            os.makedirs(path, exist_ok=True)
+        return path
+
+    @property
+    def recording_timeout(self):
         # The maximum seconds a phrase can be recorded,
         # provided there is noise the entire time
-        self.recording_timeout = listener_config.get('recording_timeout', 10.0)
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('recording_timeout', 10.0)
+
+    @property
+    def recording_timeout_with_silence(self):
         # The maximum time it will continue to record silence
         # when not enough noise has been detected
-        self.recording_timeout_with_silence = listener_config.get('recording_timeout_with_silence', 3.0)
-        # mic meter settings, will write mic level to ipc, used by debug_cli
-        # NOTE: this writes a lot to disk, it can be problematic in a sd card if you don't use a tmpfs for ipc
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('recording_timeout_with_silence', 3.0)
+
+    @property
+    def mic_level_file(self):
         ipc = get_ipc_directory()
         os.makedirs(ipc, exist_ok=True)
-        self.mic_level_file = os.path.join(ipc, "mic_level")
-        self.mic_meter_ipc_enabled = listener_config.get("mic_meter_ipc", True)
+        return os.path.join(ipc, "mic_level")
 
+    @property
+    def mic_meter_ipc_enabled(self):
+        # mic meter settings, will write mic level to ipc, used by debug_cli
+        # NOTE: this writes a lot to disk
+        # can be problematic in a sd card if you don't use a tmpfs for ipc
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get("mic_meter_ipc", True)
+
+    @property
+    def test_ww_sec(self):
         # The maximum audio in seconds to keep for transcribing a phrase
         # The wake word must fit in this time
-        self.test_ww_sec = listener_config.get("test_ww_sec", 3)
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get("test_ww_sec", 3)
 
     @property
     def account_id(self):

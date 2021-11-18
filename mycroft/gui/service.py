@@ -25,7 +25,6 @@ gui_app_settings = {
 
 class GUIService:
     def __init__(self):
-        self.global_config = Configuration.get()
         # Create Message Bus Client
         self.bus = MessageBusClient()
 
@@ -63,6 +62,10 @@ class GUIService:
         self.bus.on("gui.clear.namespace", self.on_gui_delete_namespace)
         self.bus.on("gui.event.send", self.on_gui_send_event)
         self.bus.on("gui.status.request", self.handle_gui_status_request)
+
+    @property
+    def global_config(self):
+        return Configuration.get()
 
     def create_gui_socket(self):
         import tornado.options

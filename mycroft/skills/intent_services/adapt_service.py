@@ -172,20 +172,23 @@ class AdaptService:
     def __init__(self, config):
         self.config = config
 
-        self.lang = Configuration.get().get("lang", "en-us")
         langs = Configuration.get().get('secondary_langs') or []
         if self.lang not in langs:
             langs.append(self.lang)
 
         self.engines = {lang: IntentDeterminationEngine()
                         for lang in langs}
-        # Context related intializations
+        # Context related initializations
         self.context_keywords = self.config.get('keywords', [])
         self.context_max_frames = self.config.get('max_frames', 3)
         self.context_timeout = self.config.get('timeout', 2)
         self.context_greedy = self.config.get('greedy', False)
         self.context_manager = ContextManager(self.context_timeout)
         self.lock = Lock()
+
+    @property
+    def lang(self):
+        return Configuration.get().get("lang", "en-us")
 
     def update_context(self, intent):
         """Updates context with keyword from the intent.

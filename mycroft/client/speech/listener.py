@@ -267,15 +267,22 @@ class RecognizerLoop(EventEmitter):
     def bind(self, stt):
         self.stt = stt
 
+    @property
+    def config_core(self):
+        return Configuration.get()
+
+    @property
+    def config(self):
+        self._config_hash = recognizer_conf_hash(self.config_core)
+        return self.config_core.get('listener')
+
+    @property
+    def lang(self):
+        return self.config_core.get('lang', "en-us")
+
     def _load_config(self):
         """Load configuration parameters from configuration."""
-        config = Configuration.get()
-        self.config_core = config
-        self._config_hash = recognizer_conf_hash(config)
-        self.lang = config.get('lang')
-        self.config = config.get('listener')
         rate = self.config.get('sample_rate')
-
         device_index = self.config.get('device_index')
         device_name = self.config.get('device_name')
         if not device_index and device_name:

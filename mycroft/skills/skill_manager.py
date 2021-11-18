@@ -157,7 +157,6 @@ class SkillManager(Thread):
         self._watchdog = watchdog or (lambda: None)
         self._stop_event = Event()
         self._connected_event = Event()
-        self.config = Configuration.get()
         self.upload_queue = UploadQueue()
 
         self.skill_loaders = {}
@@ -175,6 +174,10 @@ class SkillManager(Thread):
         self.skill_updater = SkillUpdater()
         self._define_message_bus_events()
         self.daemon = True
+
+    @property
+    def config(self):
+        return Configuration.get()
 
     def _define_message_bus_events(self):
         """Define message bus events with handlers defined in this class."""

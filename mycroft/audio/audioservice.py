@@ -201,7 +201,6 @@ class AudioService:
                 bus: Mycroft messagebus
         """
         self.bus = bus
-        self.config = Configuration.get().get("Audio")
         self.service_lock = Lock()
 
         self.default = None
@@ -212,6 +211,10 @@ class AudioService:
 
         self._loaded = MonotonicEvent()
         self.load_services()
+
+    @property
+    def config(self):
+        return Configuration.get().get("Audio")
 
     def load_services(self):
         """Method for loading services.

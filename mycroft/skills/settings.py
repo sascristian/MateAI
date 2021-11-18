@@ -136,7 +136,6 @@ class SettingsMetaUploader:
         self.skill_name = skill_name
         self.json_path = self.skill_directory.joinpath('settingsmeta.json')
         self.yaml_path = self.skill_directory.joinpath('settingsmeta.yaml')
-        self.config = Configuration.get()
         self.settings_meta = {}
         self.api = None
         self.upload_timer = None
@@ -154,6 +153,10 @@ class SettingsMetaUploader:
         # Property placeholders
         self._msm = None
         self._skill_gid = None
+
+    @property
+    def config(self):
+        return Configuration.get()
 
     @property
     def msm(self):

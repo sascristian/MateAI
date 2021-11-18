@@ -114,7 +114,6 @@ class PadatiousService:
         intent_cache = expanduser(self.padatious_config['intent_cache'])
         self._padaos = self.padatious_config.get("padaos_only", False)
 
-        self.lang = Configuration.get().get("lang", "en-us")
         langs = Configuration.get().get('secondary_langs') or []
         if self.lang not in langs:
             langs.append(self.lang)
@@ -154,6 +153,10 @@ class PadatiousService:
 
         self.registered_intents = []
         self.registered_entities = []
+
+    @property
+    def lang(self):
+        return Configuration.get().get("lang", "en-us")
 
     def train(self, message=None):
         """Perform padatious training.

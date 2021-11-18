@@ -134,9 +134,12 @@ class SkillLoader:
         self.last_loaded = 0
         self.instance = None
         self.active = True
-        self.config = Configuration.get()
 
         self.modtime_error_log_written = False
+
+    @property
+    def config(self):
+        return Configuration.get()
 
     @property
     def is_blacklisted(self):

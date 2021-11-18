@@ -51,7 +51,6 @@ class SpeechClient(Thread):
         self.status = ProcessStatus('speech', callback_map=callbacks)
         self.status.set_started()
 
-        self.config = Configuration.get()
         self.bus = start_message_bus_client("VOICE")
         self.connect_bus_events()
         self.status.bind(self.bus)
@@ -59,6 +58,10 @@ class SpeechClient(Thread):
         # Register handlers on internal RecognizerLoop bus
         self.loop = RecognizerLoop(self.bus, watchdog)
         self.connect_loop_events()
+
+    @property
+    def config(self):
+        return Configuration.get()
 
     # loop events
     def handle_record_begin(self):
@@ -188,7 +191,7 @@ class SpeechClient(Thread):
     def handle_open(self):
         # TODO: Move this into the Enclosure (not speech client)
         # Reset the UI to indicate ready for speech processing
-        EnclosureAPI(bus).reset()
+        EnclosureAPI(self.bus).reset()
 
     def connect_loop_events(self):
         self.loop.on('recognizer_loop:utterance', self.handle_utterance)
@@ -229,7 +232,3 @@ class SpeechClient(Thread):
         except Exception as e:
             self.status.set_error(e)
         self.status.set_stopping()
-
-
-if __name__ == "__main__":
-    main()

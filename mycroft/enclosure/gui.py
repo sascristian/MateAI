@@ -50,13 +50,16 @@ class SkillGUI:
         self.current_page_idx = -1
         self.skill = skill
         self.on_gui_changed_callback = None
-        self.config = Configuration.get()
 
     @property
     def bus(self):
         if self.skill:
             return self.skill.bus
         return None
+
+    @property
+    def config(self):
+        return Configuration.get()
 
     @property
     def connected(self):

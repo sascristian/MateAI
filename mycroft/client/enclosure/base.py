@@ -20,14 +20,20 @@ from mycroft.util import start_message_bus_client
 
 class Enclosure:
     def __init__(self):
-        # Load full config
-        config = Configuration.get()
-        self.lang = config['lang']
-        self.config = config.get("enclosure")
-        self.global_config = config
-
         # Create Message Bus Client
         self.bus = MessageBusClient()
+
+    @property
+    def lang(self):
+        return self.global_config.get("lang", "en-us")
+
+    @property
+    def config(self):
+        return self.global_config.get("enclosure") or {}
+
+    @property
+    def global_config(self):
+        return Configuration.get()
 
     def run(self):
         """Start the Enclosure after it has been constructed."""
