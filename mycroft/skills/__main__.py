@@ -229,12 +229,17 @@ def main(alive_hook=on_alive, started_hook=on_started, ready_hook=on_ready,
     event_scheduler.start()
     SkillApi.connect_bus(bus)
     skill_manager = _initialize_skill_manager(bus, watchdog)
+    http_server = None
 
     status.bind(bus)
     status.set_alive()
 
     if config["skills"].get("wait_for_internet", True):
         _wait_for_internet_connection()
+
+    if config["skills"].get("run_gui_file_server"):
+        from mycroft.util.qml_file_server import start_qml_http_server
+        http_server = start_qml_http_server(config["skills"]["directory"])
 
     if skill_manager is None:
         skill_manager = _initialize_skill_manager(bus, watchdog)
@@ -251,7 +256,7 @@ def main(alive_hook=on_alive, started_hook=on_started, ready_hook=on_ready,
 
     wait_for_exit_signal()
     status.set_stopping()
-    shutdown(skill_manager, event_scheduler)
+    shutdown(skill_manager, event_scheduler, http_server)
 
 
 def _register_intent_services(bus):
@@ -296,7 +301,7 @@ def _wait_for_internet_connection():
         time.sleep(1)
 
 
-def shutdown(skill_manager, event_scheduler):
+def shutdown(skill_manager, event_scheduler, http_server):
     LOG.info('Shutting down Skills service')
     if event_scheduler is not None:
         event_scheduler.shutdown()
@@ -304,6 +309,8 @@ def shutdown(skill_manager, event_scheduler):
     if skill_manager is not None:
         skill_manager.stop()
         skill_manager.join()
+    if http_server is not None:
+        http_server.shutdown()
     LOG.info('Skills service shutdown complete!')
 
 

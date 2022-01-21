@@ -53,6 +53,9 @@ class SkillGUI:
         self.skill = skill
         self.on_gui_changed_callback = None
         self.config = Configuration.get()
+        self.base_skill_dir = self.config["skills"]["directory"]
+        self.serving_http = self.config["skills"].get("run_gui_file_server",
+                                                      False)
 
     @property
     def bus(self):
@@ -186,13 +189,19 @@ class SkillGUI:
         page_urls = []
         for name in page_names:
             if name.startswith("SYSTEM"):
-                page = resolve_resource_file(join('ui', name))
+                if self.serving_http:
+                    page = f"{self.remote_url}/system/ui/{name}"
+                else:
+                    page = resolve_resource_file(join('ui', name))
             else:
                 page = self.skill.find_resource(name, 'ui')
+                if self.serving_http:
+                    page = page.replace(self.base_skill_dir,
+                                        join(self.remote_url, "skills"))
             if page:
                 if self.remote_url:
                     page_urls.append(self.remote_url + "/" + page)
-                elif page.startswith("file://"):
+                elif "://" in page:
                     page_urls.append(page)
                 else:
                     page_urls.append("file://" + page)
