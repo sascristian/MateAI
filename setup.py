@@ -52,7 +52,7 @@ def required(requirements_file):
 
 setup(
     name='ovos-core',
-    version=get_version(),
+    version=get_version() + "a3",
     license='Apache-2.0',
     url='https://github.com/OpenVoiceOS/ovos-core',
     description='mycroft-core packaged as a library',
