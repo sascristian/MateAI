@@ -237,7 +237,7 @@ def main(alive_hook=on_alive, started_hook=on_started, ready_hook=on_ready,
     if config["skills"].get("wait_for_internet", True):
         _wait_for_internet_connection()
 
-    if config["skills"].get("run_gui_file_server"):
+    if config["gui_websocket"].get("run_gui_file_server"):
         from mycroft.util.qml_file_server import start_qml_http_server
         http_server = start_qml_http_server(config["skills"]["directory"])
 

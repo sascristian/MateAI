@@ -54,7 +54,7 @@ class SkillGUI:
         self.on_gui_changed_callback = None
         self.config = Configuration.get()
         self.base_skill_dir = self.config["skills"]["directory"]
-        self.serving_http = self.config["skills"].get("run_gui_file_server",
+        self.serving_http = self.config["gui_websocket"].get("run_gui_file_server",
                                                       False)
 
     @property
