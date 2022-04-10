@@ -2,7 +2,15 @@
 
 ## [Unreleased](https://github.com/OpenVoiceOS/ovos-core/tree/HEAD)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a28...HEAD)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a29...HEAD)
+
+**Fixed bugs:**
+
+- fix/remove skill updater lock [\#103](https://github.com/OpenVoiceOS/ovos-core/pull/103) ([NeonJarbas](https://github.com/NeonJarbas))
+
+## [V0.0.2a29](https://github.com/OpenVoiceOS/ovos-core/tree/V0.0.2a29) (2022-04-05)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a28...V0.0.2a29)
 
 **Fixed bugs:**
 
