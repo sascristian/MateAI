@@ -2,7 +2,15 @@
 
 ## [Unreleased](https://github.com/OpenVoiceOS/ovos-core/tree/HEAD)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a29...HEAD)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a30...HEAD)
+
+**Merged pull requests:**
+
+- refactor/add\_deprecated\_module [\#99](https://github.com/OpenVoiceOS/ovos-core/pull/99) ([NeonJarbas](https://github.com/NeonJarbas))
+
+## [V0.0.2a30](https://github.com/OpenVoiceOS/ovos-core/tree/V0.0.2a30) (2022-04-10)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a29...V0.0.2a30)
 
 **Fixed bugs:**
 
