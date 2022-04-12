@@ -2,7 +2,15 @@
 
 ## [Unreleased](https://github.com/OpenVoiceOS/ovos-core/tree/HEAD)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a33...HEAD)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a34...HEAD)
+
+**Fixed bugs:**
+
+- remove skill settings bad migration path [\#107](https://github.com/OpenVoiceOS/ovos-core/pull/107) ([NeonJarbas](https://github.com/NeonJarbas))
+
+## [V0.0.2a34](https://github.com/OpenVoiceOS/ovos-core/tree/V0.0.2a34) (2022-04-12)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a33...V0.0.2a34)
 
 **Fixed bugs:**
 
