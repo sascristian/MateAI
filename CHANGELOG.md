@@ -2,7 +2,15 @@
 
 ## [Unreleased](https://github.com/OpenVoiceOS/ovos-core/tree/HEAD)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a32...HEAD)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a33...HEAD)
+
+**Fixed bugs:**
+
+- Fix additional settings UI [\#106](https://github.com/OpenVoiceOS/ovos-core/pull/106) ([AIIX](https://github.com/AIIX))
+
+## [V0.0.2a33](https://github.com/OpenVoiceOS/ovos-core/tree/V0.0.2a33) (2022-04-11)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a32...V0.0.2a33)
 
 **Fixed bugs:**
 
