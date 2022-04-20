@@ -2,7 +2,15 @@
 
 ## [Unreleased](https://github.com/OpenVoiceOS/ovos-core/tree/HEAD)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a37...HEAD)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a38...HEAD)
+
+**Merged pull requests:**
+
+- deprecate/optional\_xdg [\#112](https://github.com/OpenVoiceOS/ovos-core/pull/112) ([NeonJarbas](https://github.com/NeonJarbas))
+
+## [V0.0.2a38](https://github.com/OpenVoiceOS/ovos-core/tree/V0.0.2a38) (2022-04-20)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a37...V0.0.2a38)
 
 **Merged pull requests:**
 
