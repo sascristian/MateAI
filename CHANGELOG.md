@@ -2,7 +2,19 @@
 
 ## [Unreleased](https://github.com/OpenVoiceOS/ovos-core/tree/HEAD)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a35...HEAD)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a36...HEAD)
+
+**Fixed bugs:**
+
+- Fix/plugins shutdown [\#110](https://github.com/OpenVoiceOS/ovos-core/pull/110) ([NeonJarbas](https://github.com/NeonJarbas))
+
+**Merged pull requests:**
+
+- fix/remove lf duplicated tests [\#111](https://github.com/OpenVoiceOS/ovos-core/pull/111) ([NeonJarbas](https://github.com/NeonJarbas))
+
+## [V0.0.2a36](https://github.com/OpenVoiceOS/ovos-core/tree/V0.0.2a36) (2022-04-14)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a35...V0.0.2a36)
 
 **Fixed bugs:**
 
@@ -719,15 +731,15 @@
 
 ## [v0.8.5](https://github.com/OpenVoiceOS/ovos-core/tree/v0.8.5) (2017-02-16)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/release/v0.8.4...v0.8.5)
-
-## [release/v0.8.4](https://github.com/OpenVoiceOS/ovos-core/tree/release/v0.8.4) (2017-02-15)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/release/0.8.4...release/v0.8.4)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/release/0.8.4...v0.8.5)
 
 ## [release/0.8.4](https://github.com/OpenVoiceOS/ovos-core/tree/release/0.8.4) (2017-02-15)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/v0.8.3...release/0.8.4)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/release/v0.8.4...release/0.8.4)
+
+## [release/v0.8.4](https://github.com/OpenVoiceOS/ovos-core/tree/release/v0.8.4) (2017-02-15)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/v0.8.3...release/v0.8.4)
 
 ## [v0.8.3](https://github.com/OpenVoiceOS/ovos-core/tree/v0.8.3) (2017-02-07)
 
@@ -755,7 +767,11 @@
 
 ## [release/0.7.20](https://github.com/OpenVoiceOS/ovos-core/tree/release/0.7.20) (2016-10-13)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/release/0.7.18...release/0.7.20)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/release/0.7.17...release/0.7.20)
+
+## [release/0.7.17](https://github.com/OpenVoiceOS/ovos-core/tree/release/0.7.17) (2016-09-22)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/release/0.7.18...release/0.7.17)
 
 ## [release/0.7.18](https://github.com/OpenVoiceOS/ovos-core/tree/release/0.7.18) (2016-09-22)
 
@@ -763,11 +779,7 @@
 
 ## [release/0.7.19](https://github.com/OpenVoiceOS/ovos-core/tree/release/0.7.19) (2016-09-22)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/release/0.7.17...release/0.7.19)
-
-## [release/0.7.17](https://github.com/OpenVoiceOS/ovos-core/tree/release/0.7.17) (2016-09-22)
-
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/release/0.7.16...release/0.7.17)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/release/0.7.16...release/0.7.19)
 
 ## [release/0.7.16](https://github.com/OpenVoiceOS/ovos-core/tree/release/0.7.16) (2016-09-05)
 
