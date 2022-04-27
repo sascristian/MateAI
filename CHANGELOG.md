@@ -2,7 +2,19 @@
 
 ## [Unreleased](https://github.com/OpenVoiceOS/ovos-core/tree/HEAD)
 
-[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a38...HEAD)
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a39...HEAD)
+
+**Implemented enhancements:**
+
+- refactor/default\_offline [\#113](https://github.com/OpenVoiceOS/ovos-core/pull/113) ([NeonJarbas](https://github.com/NeonJarbas))
+
+**Merged pull requests:**
+
+- change matrix chat message [\#114](https://github.com/OpenVoiceOS/ovos-core/pull/114) ([JarbasAl](https://github.com/JarbasAl))
+
+## [V0.0.2a39](https://github.com/OpenVoiceOS/ovos-core/tree/V0.0.2a39) (2022-04-20)
+
+[Full Changelog](https://github.com/OpenVoiceOS/ovos-core/compare/V0.0.2a38...V0.0.2a39)
 
 **Merged pull requests:**
 
