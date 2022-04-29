@@ -13,6 +13,7 @@
 # limitations under the License.
 #
 import audioop
+import time
 from time import sleep, time as get_time
 
 from collections import deque, namedtuple
@@ -32,7 +33,7 @@ from speech_recognition import (
 )
 from tempfile import gettempdir
 from threading import Thread, Lock
-
+from mycroft.messagebus.message import Message
 from mycroft.api import DeviceApi
 from mycroft.configuration import Configuration
 from mycroft.session import SessionManager
@@ -40,12 +41,13 @@ from mycroft.util import (
     check_for_signal,
     get_ipc_directory,
     resolve_resource_file,
-    play_wav
+    play_wav, play_ogg, play_mp3
 )
 from mycroft.util.log import LOG
 
 from mycroft.client.speech.data_structures import RollingMean, \
     CyclicAudioBuffer
+from mycroft.util import resolve_resource_file
 
 
 WakeWordData = namedtuple('WakeWordData',
@@ -327,52 +329,119 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
     # Time between pocketsphinx checks for the wake word
     SEC_BETWEEN_WW_CHECKS = 0.2
 
-    def __init__(self, wake_word_recognizer, watchdog=None):
+    def __init__(self, loop, watchdog=None):
+        self.loop = loop
         self._watchdog = watchdog or (lambda: None)  # Default to dummy func
-        self.config = Configuration.get()
-        listener_config = self.config.get('listener')
-        self.instant_listen = listener_config.get("instant_listen", False)
-        self.upload_url = listener_config['wake_word_upload']['url']
-        self.upload_disabled = listener_config['wake_word_upload']['disable']
-        self.wake_word_name = wake_word_recognizer.key_phrase
-
-        self.overflow_exc = listener_config.get('overflow_exception', False)
 
         super().__init__()
-        self.wake_word_recognizer = wake_word_recognizer
         self.audio = pyaudio.PyAudio()
-        self.multiplier = listener_config.get('multiplier')
-        self.energy_ratio = listener_config.get('energy_ratio')
-
-        # Check the config for the flag to save wake words, utterances
-        # and for a path under which to save them
-        self.save_utterances = listener_config.get('save_utterances', False)
-        self.save_wake_words = listener_config.get('record_wake_words', False)
-        self.save_path = listener_config.get('save_path', gettempdir())
-        self.saved_wake_words_dir = join(self.save_path, 'mycroft_wake_words')
-        if self.save_wake_words and not isdir(self.saved_wake_words_dir):
-            os.mkdir(self.saved_wake_words_dir)
-        self.saved_utterances_dir = join(self.save_path, 'mycroft_utterances')
-        if self.save_utterances and not isdir(self.saved_utterances_dir):
-            os.mkdir(self.saved_utterances_dir)
-
-        self.mic_level_file = os.path.join(get_ipc_directory(), "mic_level")
 
         # Signal statuses
         self._stop_signaled = False
         self._listen_triggered = False
+        self._waiting_for_wakeup = False
+        self._last_ww_ts = 0
 
+        # identifier used when uploading wakewords to selene
         self._account_id = None
 
+    @property
+    def config(self):
+        return Configuration.get()
+
+    @property
+    def instant_listen(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get("instant_listen", False)
+
+    @property
+    def overflow_exc(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('overflow_exception', False)
+
+    @property
+    def upload_url(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config['wake_word_upload']['url']
+
+    @property
+    def upload_disabled(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config['wake_word_upload']['disable']
+
+    @property
+    def multiplier(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('multiplier')
+
+    @property
+    def energy_ratio(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('energy_ratio')
+
+    @property
+    def save_utterances(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('save_utterances', False)
+
+    @property
+    def save_wake_words(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('record_wake_words', False)
+
+    @property
+    def save_path(self):
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('save_path', gettempdir())
+
+    @property
+    def saved_wake_words_dir(self):
+        path = join(self.save_path, 'mycroft_wake_words')
+        if self.save_wake_words:
+            os.makedirs(path, exist_ok=True)
+        return path
+
+    @property
+    def saved_utterances_dir(self):
+        path = join(self.save_path, 'mycroft_utterances')
+        if self.save_wake_words:
+            os.makedirs(path, exist_ok=True)
+        return path
+
+    @property
+    def recording_timeout(self):
         # The maximum seconds a phrase can be recorded,
         # provided there is noise the entire time
-        self.recording_timeout = listener_config.get('recording_timeout',
-                                                     10.0)
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('recording_timeout', 10.0)
 
+    @property
+    def recording_timeout_with_silence(self):
         # The maximum time it will continue to record silence
         # when not enough noise has been detected
-        self.recording_timeout_with_silence = listener_config.get(
-            'recording_timeout_with_silence', 3.0)
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get('recording_timeout_with_silence', 3.0)
+
+    @property
+    def mic_level_file(self):
+        ipc = get_ipc_directory()
+        os.makedirs(ipc, exist_ok=True)
+        return os.path.join(ipc, "mic_level")
+
+    @property
+    def mic_meter_ipc_enabled(self):
+        # mic meter settings, will write mic level to ipc, used by debug_cli
+        # NOTE: this writes a lot to disk
+        # can be problematic in a sd card if you don't use a tmpfs for ipc
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get("mic_meter_ipc", True)
+
+    @property
+    def test_ww_sec(self):
+        # The maximum audio in seconds to keep for transcribing a phrase
+        # The wake word must fit in this time
+        listener_config = self.config.get('listener') or {}
+        return listener_config.get("test_ww_sec", 3)
 
     @property
     def account_id(self):
@@ -398,6 +467,36 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
     @staticmethod
     def calc_energy(sound_chunk, sample_width):
         return audioop.rms(sound_chunk, sample_width)
+
+    def feed_hotwords(self, chunk):
+        """ feed sound chunk to hotword engines that perform
+         streaming predictions (eg, precise) """
+        for ww, hotword in self.loop.engines.items():
+            hotword["engine"].update(chunk)
+
+    def check_for_wakeup(self, audio_data):
+        if time.time() - self._last_ww_ts >= 5:
+            self._waiting_for_wakeup = False
+        if not self._waiting_for_wakeup or not self.loop.state.sleeping:
+            return
+        for ww, hotword in self.loop.engines.items():
+            if hotword.get("wakeup") and hotword["engine"].found_wake_word(audio_data):
+                self.loop.state.sleeping = False
+                self.loop.emit('recognizer_loop:awoken')
+                self._waiting_for_wakeup = False
+                return True
+        return False
+
+    def check_for_hotwords(self, audio_data):
+        if self.check_for_wakeup(audio_data):
+            return  # was a wake up command to come out of sleep state
+        # check hot word
+        for ww, hotword in self.loop.engines.items():
+            if hotword.get("wakeup"):
+                # ignore sleep mode hotword
+                continue
+            if hotword["engine"].found_wake_word(audio_data):
+                yield ww
 
     def _record_phrase(
         self,
@@ -472,13 +571,14 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
         return byte_data
 
     def write_mic_level(self, energy, source):
-        with open(self.mic_level_file, 'w') as f:
-            f.write('Energy:  cur={} thresh={:.3f} muted={}'.format(
-                energy,
-                self.energy_threshold,
-                int(source.muted)
+        if self.mic_meter_ipc_enabled:
+            with open(self.mic_level_file, 'w') as f:
+                f.write('Energy:  cur={} thresh={:.3f} muted={}'.format(
+                    energy,
+                    self.energy_threshold,
+                    int(source.muted)
+                    )
                 )
-            )
 
     def _skip_wake_word(self):
         """Check if told programatically to skip the wake word
@@ -506,17 +606,17 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
         """Signal stop and exit waiting state."""
         self._stop_signaled = True
 
-    def _compile_metadata(self):
-        ww_module = self.wake_word_recognizer.__class__.__name__
+    def _compile_metadata(self, engine):
+        ww_module = engine.__class__.__name__
         if ww_module == 'PreciseHotword':
-            model_path = self.wake_word_recognizer.precise_model
+            model_path = engine.precise_model
             with open(model_path, 'rb') as f:
                 model_hash = md5(f.read()).hexdigest()
         else:
             model_hash = '0'
 
         return {
-            'name': self.wake_word_name.replace(' ', '-'),
+            'name': engine.key_phrase,
             'engine': md5(ww_module.encode('utf-8')).hexdigest(),
             'time': str(int(1000 * get_time())),
             'sessionId': SessionManager.get().session_id,
@@ -529,7 +629,7 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
         LOG.debug('Listen triggered from external source.')
         self._listen_triggered = True
 
-    def _upload_wakeword(self, audio, metadata):
+    def _upload_hotword(self, audio, metadata):
         """Upload the wakeword in a background thread."""
         LOG.debug(
             "Wakeword uploading has been disabled. The API endpoint used in "
@@ -542,18 +642,7 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
         #                          'metadata': StringIO(json.dumps(metadata))})
         # Thread(target=upload, daemon=True, args=(audio, metadata)).start()
 
-    def _send_wakeword_info(self, emitter):
-        """Send messagebus message indicating that a wakeword was received.
-
-        Args:
-            emitter: bus emitter to send information on.
-        """
-        SessionManager.touch()
-        payload = {'utterance': self.wake_word_name,
-                   'session': SessionManager.get().session_id}
-        emitter.emit("recognizer_loop:wakeword", payload)
-
-    def _write_wakeword_to_disk(self, audio, metadata):
+    def _write_hotword_to_disk(self, audio, metadata):
         """Write wakeword to disk.
 
         Args:
@@ -566,24 +655,86 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
         with open(filename, 'wb') as f:
             f.write(audio.get_wav_data())
 
-    def _handle_wakeword_found(self, audio_data, source):
-        """Perform actions to be triggered after a wakeword is found.
+    def _handle_hotword_found(self, hotword, audio_data, source):
+        """Perform actions to be triggered after a hotword is found.
 
-        This includes: emit event on messagebus that a wakeword is heard,
-        store wakeword to disk if configured and sending the wakeword data
+        This includes: emit event on messagebus that a hotword is heard,
+        execute hotword specific pre-configured actions,
+        store hotword to disk if configured and sending the hotword data
         to the cloud in case the user has opted into the data sharing.
         """
+
+        engine = self.loop.engines[hotword]["engine"]
+        sound = self.loop.engines[hotword]["sound"]
+        utterance = self.loop.engines[hotword]["utterance"]
+        listen = self.loop.engines[hotword]["listen"]
+        stt_lang = self.loop.engines[hotword]["stt_lang"]
+        event = self.loop.engines[hotword]["bus_event"]
+
+        if self.loop.state.sleeping:
+            if listen:
+                self._waiting_for_wakeup = True
+                self._last_ww_ts = time.time()
+            return  # no wake word handling during sleep mode
+
+        payload = dict(self.loop.engines[hotword])
+        payload["hotword"] = hotword
+        payload["engine"] = engine.__class__.__name__
+
+        if event:
+            self.loop.emit("recognizer_loop:hotword_event",
+                           {"msg_type": event})
+
+        if utterance:
+            LOG.debug("Hotword utterance: " + utterance)
+            # send the transcribed word on for processing
+            payload = {
+                'utterances': [utterance],
+                "lang": stt_lang
+            }
+            self.loop.emit("recognizer_loop:utterance", payload)
+        elif listen:
+            payload["utterance"] = payload["hotword"]
+            self.loop.emit("recognizer_loop:wakeword", payload)
+        else:
+            self.loop.emit("recognizer_loop:hotword", payload)
+
+        # If enabled, play a wave file with a short sound to audibly
+        # indicate hotword was detected.
+        if sound:
+            try:
+                audio_file = resolve_resource_file(sound)
+
+                def play_audio():
+                    if audio_file.endswith(".mp3"):
+                        return play_mp3(audio_file)
+                    elif audio_file.endswith(".ogg"):
+                        return play_ogg(audio_file)
+                    else:
+                        # default behaviour, maybe .conf was set to use sox
+                        # that support all sorts of audio extensions
+                        return play_wav(audio_file)
+
+                if self.instant_listen or not listen:
+                    play_audio()
+                else:
+                    source.mute()
+                    play_audio().wait()
+                    source.unmute()
+            except Exception as e:
+                LOG.warning(e)
+
         # Save and upload positive wake words as appropriate
         upload_allowed = (self.config['opt_in'] and not self.upload_disabled)
         if (self.save_wake_words or upload_allowed):
             audio = self._create_audio_data(audio_data, source)
-            metadata = self._compile_metadata()
+            metadata = self._compile_metadata(engine)
             if self.save_wake_words:
                 # Save wake word locally
-                self._write_wakeword_to_disk(audio, metadata)
+                self._write_hotword_to_disk(audio, metadata)
             # Upload wake word for opt_in people
             if upload_allowed:
-                self._upload_wakeword(audio, metadata)
+                self._upload_hotword(audio, metadata)
 
     def _wait_until_wake_word(self, source, sec_per_buffer):
         """Listen continuously on source until a wake word is spoken
@@ -595,7 +746,7 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
 
         # The maximum audio in seconds to keep for transcribing a phrase
         # The wake word must fit in this time
-        ww_duration = self.wake_word_recognizer.expected_duration
+        ww_duration = self.test_ww_sec
         ww_test_duration = max(3, ww_duration)
 
         mic_write_counter = 0
@@ -623,9 +774,12 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
         ww_frames = deque(maxlen=7)
 
         said_wake_word = False
-        audio_data = None
-        while (not said_wake_word and not self._stop_signaled and
-               not self._skip_wake_word()):
+        audio_data = silence
+        while not said_wake_word and not self._stop_signaled:
+            if self._skip_wake_word():
+                return WakeWordData(audio_data, False,
+                                    self._stop_signaled, ww_frames),  \
+                       self.config.get("lang", "en-us")
             chunk = self.record_sound_chunk(source)
             audio_buffer.append(chunk)
             ww_frames.append(chunk)
@@ -648,18 +802,24 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
             mic_write_counter += 1
 
             buffers_since_check += 1.0
-            # Send chunk to wake_word_recognizer
-            self.wake_word_recognizer.update(chunk)
-
+            self.feed_hotwords(chunk)
             if buffers_since_check > buffers_per_check:
                 buffers_since_check -= buffers_per_check
                 audio_data = audio_buffer.get_last(test_size) + silence
-                said_wake_word = \
-                    self.wake_word_recognizer.found_wake_word(audio_data)
+                said_hot_word = False
+                for hotword in self.check_for_hotwords(audio_data):
+                    said_hot_word = True
+                    listen = self.loop.engines[hotword]["listen"]
+                    stt_lang = self.loop.engines[hotword]["stt_lang"]
+                    self._handle_hotword_found(hotword, audio_data, source)
+                    if listen and not self.loop.state.sleeping:
+                        return WakeWordData(audio_data, said_wake_word,
+                            self._stop_signaled, ww_frames), stt_lang
 
-        self._listen_triggered = False
-        return WakeWordData(audio_data, said_wake_word,
-                            self._stop_signaled, ww_frames)
+                if said_hot_word:
+                    # reset bytearray to store wake word audio in, else many
+                    # serial detections
+                    audio_buffer.clear()
 
     @staticmethod
     def _create_audio_data(raw_data, source):
@@ -669,23 +829,7 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
         """
         return AudioData(raw_data, source.SAMPLE_RATE, source.SAMPLE_WIDTH)
 
-    def mute_and_confirm_listening(self, source):
-        audio_file = resolve_resource_file(
-            self.config.get('sounds').get('start_listening'))
-        if audio_file:
-            if self.instant_listen:
-                # keep recording while playing sound
-                # assume STT can handle it
-                play_wav(audio_file)
-            else:
-                source.mute()
-                play_wav(audio_file).wait()
-                source.unmute()
-            return True
-        else:
-            return False
-
-    def listen(self, source, emitter, stream=None):
+    def listen(self, source, stream):
         """Listens for chunks of audio that Mycroft should perform STT on.
 
         This will listen continuously for a wake-up-word, then return the
@@ -694,14 +838,13 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
 
         Args:
             source (AudioSource):  Source producing the audio chunks
-            emitter (EventEmitter): Emitter for notifications of when recording
-                                    begins and ends.
             stream (AudioStreamHandler): Stream target that will receive chunks
                                          of the utterance audio while it is
                                          being recorded
 
         Returns:
-            AudioData: audio with the user's utterance, minus the wake-up-word
+            (AudioData, lang): audio with the user's utterance (minus the
+                               wake-up-word), stt_lang
         """
         assert isinstance(source, AudioSource), "Source must be an AudioSource"
 
@@ -716,30 +859,15 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
         self.adjust_for_ambient_noise(source, 1.0)
 
         LOG.debug("Waiting for wake word...")
-        ww_data = self._wait_until_wake_word(source, sec_per_buffer)
+        ww_data, lang = self._wait_until_wake_word(source, sec_per_buffer)
 
-        ww_frames = None
-        if ww_data.found:
-            # If the wakeword was heard send it
-            self._send_wakeword_info(emitter)
-            self._handle_wakeword_found(ww_data.audio, source)
-            ww_frames = ww_data.end_audio
-        if ww_data.stopped:
-            # If the waiting returned from a stop signal
-            return
+        if ww_data.stopped or self.loop.state.sleeping:
+            # If the waiting returned from a stop signal or sleep mode is active
+            return None, lang
+        ww_frames = ww_data.end_audio
 
         LOG.debug("Recording...")
-        # If enabled, play a wave file with a short sound to audibly
-        # indicate recording has begun.
-        if self.config.get('confirm_listening'):
-            if self.mute_and_confirm_listening(source):
-                # Clear frames from wakeword detections since they're
-                # irrelevant after mute - play wav - unmute sequence
-                if not self.instant_listen:
-                    ww_frames = None
-
-        # Notify system of recording start
-        emitter.emit("recognizer_loop:record_begin")
+        self.loop.emit("recognizer_loop:record_begin")
 
         frame_data = self._record_phrase(
             source,
@@ -748,9 +876,9 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
             ww_frames
         )
         audio_data = self._create_audio_data(frame_data, source)
-        emitter.emit("recognizer_loop:record_end")
+        self.loop.emit("recognizer_loop:record_end")
         if self.save_utterances:
-            LOG.info("Recording utterance")
+            LOG.info("Saving Utterance Recording")
             stamp = str(datetime.datetime.now())
             filename = "/{}/{}.wav".format(
                 self.saved_utterances_dir,
@@ -760,7 +888,7 @@ class ResponsiveRecognizer(speech_recognition.Recognizer):
                 filea.write(audio_data.get_wav_data())
             LOG.debug("Thinking...")
 
-        return audio_data
+        return audio_data, lang
 
     def _adjust_threshold(self, energy, seconds_per_buffer):
         if self.dynamic_energy_threshold and energy > 0:

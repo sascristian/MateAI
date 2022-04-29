@@ -46,15 +46,22 @@ class Api:
 
     def __init__(self, path):
         self.path = path
-
-        # Load the config, skipping the remote config since we are
-        # getting the info needed to get to it!
-        config = Configuration.get(cache=False, remote=False)
-        config_server = config.get("server")
-        self.url = config_server.get("url")
-        self.version = config_server.get("version")
         self.identity = IdentityManager.get()
         self.disabled = is_backend_disabled()
+
+    @property
+    def url(self):
+        # Load the config, skipping the remote config since we are
+        # getting the info needed to get to it!
+        config = Configuration.get(cache=False, remote=False).get("server", {})
+        return config.get("url")
+
+    @property
+    def version(self):
+        # Load the config, skipping the remote config since we are
+        # getting the info needed to get to it!
+        config = Configuration.get(cache=False, remote=False).get("server", {})
+        return config.get("version")
 
     def request(self, params):
         self.check_token()
